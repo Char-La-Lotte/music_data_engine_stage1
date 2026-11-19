@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TikTok iTV – Music Data Engine</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo-box">iTV</div>
+    <div>
+      <h1>TikTok iTV <span>Music Data Engine</span></h1>
+      <small>Giai đoạn 1 (Discovery) · Giai đoạn 2 (Broadcast & Overlay) · Giai đoạn 3 (TikTok LIVE & Voting)</small>
+    </div>
+  </div>
+  <div class="header-actions">
+    <a href="/overlay" target="_blank" class="btn-overlay" title="Mở trang Browser Source cho OBS">📺 Mở OBS Overlay</a>
+    <div id="warn" class="warn" hidden>Chưa cấu hình YOUTUBE_API_KEY trong .env</div>
+  </div>
+</header>
+
+<main>
+  <!-- THANH CHẠY DANH SÁCH BÀI HÁT & BÀI SẮP TỚI -->
+  <div class="dash-ticker">
+    <div class="dash-ticker-badge">
+      <span class="live-dot-sm"></span>
+      <span>BÀI SẮP TỚI:</span>
+      <b id="dashNextSong">Đang chọn bài...</b>
+    </div>
+    <div class="dash-ticker-marquee">
+      <div class="dash-ticker-track" id="dashTickerTrack">
+        <span>Đang tải danh sách bài hát trong hệ thống...</span>
+      </div>
+    </div>
+    <div class="dash-ticker-speed-ctrl" title="Kéo để chỉnh tốc độ chạy chữ trên Dashboard và OBS Overlay">
+      <span class="ctrl-label">⏱️ Tốc độ:</span>
+      <input type="range" id="tickerSpeedRange" min="60" max="360" step="15" value="180">
+      <b id="tickerSpeedVal">180s</b>
+    </div>
+  </div>
+
+  <!-- THẺ THỐNG KÊ -->
+  <section class="cards" id="stats"></section>
+
+  <!-- PANEL 1: BROADCAST & SCHEDULER -->
+  <section class="panel">
+    <div class="panel-header">
+      <h2>📡 Phát sóng OBS & Điều phối lịch (Broadcast & Scheduler)</h2>
+      <div class="panel-tag" id="bcStatusTag">Đang dừng</div>
+    </div>
+
+    <div class="bc-grid">
+      <!-- Cột trái: Điều khiển & Trạng thái phát -->
+      <div class="bc-box">
+        <div class="row btns-row">
+          <button id="btnStart" class="btn-success">▶ Bắt đầu phát</button>
+          <button id="btnSkip" class="btn-warning">⏭ Chuyển bài (Skip)</button>
+          <button id="btnStop" class="btn-danger">⏹ Dừng phát</button>
+        </div>
+
+        <div class="track-card current" id="currentTrackBox">
+          <div class="track-label">ĐANG PHÁT HIỆN TẠI</div>
+          <div class="track-content" id="currentTrackContent">
+            <em>Chưa có bài hát nào đang phát</em>
+          </div>
+        </div>
+
+        <div class="track-card next" id="nextTrackBox">
+          <div class="track-label">BÀI TIẾP THEO DỰ KIẾN</div>
+          <div class="track-content" id="nextTrackContent">
+            <em>Chưa chọn bài tiếp theo</em>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cột phải: Cài đặt chế độ & Khung giờ -->
+      <div class="bc-box">
+        <h3>Cài đặt điều phối lịch</h3>
+        <div class="form-group">
+          <label>Chế độ phát (Mode):</label>
+          <select id="bcMode">
+            <option value="rotation">rotation (Xoay vòng V-Pop / Quốc tế)</option>
+            <option value="random">random (Ngẫu nhiên trong kho ready)</option>
+            <option value="category">category (Theo khung giờ slots)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Khung giờ slots (JSON):</label>
+          <textarea id="bcSlots" rows="3" placeholder='[{"start":"06:00","end":"12:00","category":"V-Pop"},{"start":"12:00","end":"18:00","category":"Ballad"}]'></textarea>
+        </div>
+        <button id="btnSaveBcSettings" class="btn-primary-sm">Lưu cấu hình phát</button>
+      </div>
+    </div>
+
+    <!-- Hàng đợi phát (Queue) -->
+    <div class="queue-section">
+      <div class="queue-header">
+        <h3>Hàng đợi ưu tiên (Queue)</h3>
+        <span class="badge" id="queueCountBadge">0 bài</span>
+      </div>
+      <div class="table-wrap">
+        <table class="compact-table">
+          <thead>
+            <tr>
+              <th width="50">#</th>
+              <th width="60">Ảnh</th>
+              <th>Bài hát</th>
+              <th>Thời lượng</th>
+              <th>Danh mục</th>
+              <th width="80">Hành động</th>
+            </tr>
+          </thead>
+          <tbody id="queueRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- PANEL 2: TIKTOK LIVE & BÌNH CHỌN (GIAI ĐOẠN 3) -->
+  <section class="panel">
+    <div class="panel-header">
+      <h2>🗳️ TikTok LIVE & Bình chọn Realtime (Giai đoạn 3)</h2>
+      <div class="voting-controls">
+        <span id="votingStatusBadge" class="badge-active">Bình chọn: ĐANG BẬT</span>
+        <button id="btnToggleVoting" class="btn-secondary-sm">Bật/Tắt</button>
+        <button id="btnFinalizeVoting" class="btn-success-sm" title="Chọn Top 1 đưa vào hàng đợi và mở vòng mới">🏆 Chốt vòng & Đưa Top 1 vào Hàng đợi</button>
+        <button id="btnResetVoting" class="btn-secondary-sm" title="Đặt lại điểm phiên mới">🔄 Đặt lại phiên</button>
+      </div>
+    </div>
+
+    <div class="live-grid">
+      <!-- Cột trái: Bảng xếp hạng Realtime vòng hiện tại -->
+      <div class="live-box">
+        <div class="sub-header">
+          <h3>Bảng xếp hạng vòng hiện tại (<span id="currentSessionId">session</span>)</h3>
+          <small>Cập nhật realtime qua WebSocket lên OBS</small>
+        </div>
+        <div class="table-wrap">
+          <table class="compact-table">
+            <thead>
+              <tr>
+                <th width="40">Hạng</th>
+                <th width="60">Mã</th>
+                <th>Bài hát</th>
+                <th>Thể loại</th>
+                <th width="70">Điểm</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboardRows"></tbody>
+          </table>
+        </div>
+
+        <div class="quick-codes-section">
+          <label>Mã bình chọn các bài Ready (#ID):</label>
+          <div id="readyCodesChips" class="chips mini-chips"></div>
+        </div>
+      </div>
+
+      <!-- Cột phải: Bộ mô phỏng sự kiện TikTok LIVE -->
+      <div class="live-box">
+        <div class="sub-header">
+          <h3>🎮 Bộ mô phỏng TikTok LIVE (Test không cần live thật)</h3>
+          <span class="badge-sim">Simulation Mode</span>
+        </div>
+
+        <!-- Form bắn comment giả -->
+        <div class="sim-card">
+          <h4>Bắn Comment giả lập</h4>
+          <div class="row">
+            <input id="simCUser" placeholder="Tên khán giả" value="User_Fan" style="width: 140px;">
+            <input id="simCText" placeholder="Nội dung comment (VD: #1, #2...)" value="#1">
+            <button id="btnSimComment" class="btn-primary-sm">Gửi Comment</button>
+          </div>
+          <small class="hint">Cú pháp: comment chứa mã <code>#MÃ</code> sẽ được cộng 1 phiếu (chống spam 10s/user).</small>
+        </div>
+
+        <!-- Form bắn Gift giả -->
+        <div class="sim-card">
+          <h4>Bắn Quà tặng (Gift) giả lập</h4>
+          <div class="row">
+            <input id="simGUser" placeholder="Tên fan VIP" value="DaiGia_88" style="width: 140px;">
+            <select id="simGGift">
+              <option value="Hoa hồng|1">Hoa hồng (1💎 = 1 phiếu)</option>
+              <option value="TikTok|17">TikTok (17💎 = 17 phiếu)</option>
+              <option value="Mũi tên tình yêu|100">Mũi tên (100💎 = 100 phiếu)</option>
+              <option value="Sư tử vương quyền|1000">Sư tử (1000💎 = 1000 phiếu)</option>
+            </select>
+            <input id="simGCode" placeholder="Mã #ID muốn tặng" style="width: 110px;" value="#1">
+            <button id="btnSimGift" class="btn-success-sm">Tặng Quà</button>
+          </div>
+          <small class="hint">Quà tặng cộng điểm theo giá trị kim cương (diamonds).</small>
+        </div>
+
+        <!-- Stream nhật ký sự kiện TikTok LIVE -->
+        <div class="sim-logs">
+          <div class="sub-header"><label>Sự kiện TikTok LIVE vừa nhận:</label></div>
+          <div id="simEventsStream" class="event-stream"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PANEL 3: THƯ VIỆN MV -->
+  <section class="panel">
+    <h2>📚 Thư viện MV</h2>
+    <div class="row filter-row">
+      <input id="q" placeholder="Tìm tên bài, ca sĩ, kênh...">
+      <select id="fRights">
+        <option value="">Mọi trạng thái quyền</option>
+        <option value="pending">pending (Chờ xác minh)</option>
+        <option value="licensed">licensed (Đã có quyền phát)</option>
+        <option value="blocked">blocked (Bị chặn)</option>
+      </select>
+      <select id="fCat"><option value="">Mọi danh mục</option></select>
+      <button id="btnCleanCompilations" class="btn-warning" title="Tự động lọc và xóa các video tổng hợp, liên khúc, quá dài (>10 phút)">🧹 Dọn dẹp video tổng hợp</button>
+      <button id="btnGenBatchTest" class="btn-success" title="Tự động tạo 5 video test MP4 Full HD bằng FFmpeg để kiểm thử ngay luồng phát">🎬 Tạo video test nhanh (5 bài)</button>
+      <input type="file" id="fileUploadInput" accept="video/*" style="display:none">
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th width="40">Mã</th>
+            <th width="65">Ảnh</th>
+            <th>Bài hát & Nghệ sĩ</th>
+            <th>Danh mục</th>
+            <th>Thời lượng</th>
+            <th>Quyền phát</th>
+            <th>Nguồn file MP4 local (playback_source)</th>
+            <th width="70">Hàng đợi</th>
+            <th width="50">Bật</th>
+            <th width="60"></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- PANEL 4: DISCOVERY TỪ YOUTUBE -->
+  <section class="panel">
+    <h2>🔍 YouTube Discovery</h2>
+    <div class="row">
+      <input id="kw" placeholder="Thêm từ khóa tìm kiếm mới...">
+      <button id="addKw" class="btn-secondary">Thêm từ khóa</button>
+      <button id="runAll" class="btn-primary">Chạy tất cả từ khóa</button>
+    </div>
+    <div id="keywords" class="chips"></div>
+    <pre id="discoverResult"></pre>
+  </section>
+
+  <!-- PANEL 5: NHẬT KÝ & LỊCH SỬ -->
+  <section class="panel">
+    <div class="tabs-header">
+      <button class="tab-btn active" data-tab="tabHistory">Lịch sử phát sóng</button>
+      <button class="tab-btn" data-tab="tabVotes">Lịch sử bình chọn</button>
+      <button class="tab-btn" data-tab="tabLogs">Nhật ký thu thập YouTube</button>
+    </div>
+
+    <div class="tab-content active" id="tabHistory">
+      <div class="table-wrap">
+        <table class="compact-table">
+          <thead><tr><th>Thời gian</th><th>Bài hát</th><th>Ca sĩ</th><th>Danh mục</th><th>Thời lượng</th></tr></thead>
+          <tbody id="historyRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tabVotes">
+      <div class="table-wrap">
+        <table class="compact-table">
+          <thead><tr><th>Thời gian</th><th>Phiên</th><th>Khán giả</th><th>Bài hát</th><th>Loại vote</th><th>Điểm</th><th>Nội dung</th></tr></thead>
+          <tbody id="votesRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tabLogs">
+      <div class="table-wrap">
+        <table class="compact-table">
+          <thead><tr><th>Thời gian</th><th>Từ khóa</th><th>Tìm thấy</th><th>Thêm mới</th><th>Lỗi</th></tr></thead>
+          <tbody id="logs"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
